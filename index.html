@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>우리집 공부방</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <!-- 로그인 화면 -->
+    <section id="screen-login" class="screen active">
+      <div class="login-card">
+        <div class="login-photo-frame">
+          <img
+            class="login-family-photo"
+            src="family-login.jpg"
+            alt="우리 가족 사진"
+            onerror="this.parentElement.classList.add('is-hidden')"
+          />
+        </div>
+        <div class="app-badge">Family Study</div>
+        <h1>우리집 공부방</h1>
+        <p class="login-desc">
+          오늘도 힘차게 시작해 볼까요?<br />
+          비밀번호를 입력해 주세요.
+        </p>
+
+        <input
+          id="loginCodeInput"
+          class="big-input"
+          type="password"
+          inputmode="numeric"
+          placeholder="비밀번호"
+        />
+
+        <button class="primary-btn" onclick="login()">공부방 들어가기</button>
+
+        <p id="dailyStudyQuote" class="daily-study-quote"></p>
+
+        <p id="loginMsg" class="message"></p>
+      </div>
+    </section>
+
+    <!-- 메인 앱 화면 -->
+    <section id="screen-main" class="screen">
+      <header class="top-header">
+        <div>
+          <p class="small-label">우리집 공부방</p>
+          <h2 id="helloTitle">안녕하세요</h2>
+        </div>
+        <button class="small-btn" onclick="logout()">나가기</button>
+      </header>
+
+      <main class="main-content">
+        <!-- 홈 -->
+        <section id="tab-home" class="tab-page active">
+          <div class="hero-card">
+            <p id="todayLabel" class="small-label">오늘 내 공부</p>
+            <h3 id="todayProgressTitle">0개 중 0개 완료</h3>
+            <p id="todayScoreHint">오늘 공부를 모두 끝내면 +100점</p>
+          </div>
+
+          <section class="section-card mailbox-home-card">
+            <div class="section-title-row">
+              <div>
+                <h3>
+                  💌 행복 우체통
+                </h3>
+                <p class="help-text">가족이 남긴 따뜻한 글을 확인해요.</p>
+              </div>
+              <div class="mailbox-home-actions">
+                <button id="mailboxNewBadge" class="mailbox-new-badge hidden" onclick="openMailboxPreview()">new 0</button>
+                <button id="mailboxToggleBtn" class="mini-btn" onclick="toggleMailboxPreview()">보기</button>
+              </div>
+            </div>
+
+            <div id="mailboxPreviewBox" class="mailbox-preview-box hidden">
+              <div id="homeMailboxUnreadList" class="mailbox-list empty-box">
+                새로 도착한 글이 없어요.
+              </div>
+            </div>
+          </section>
+
+          <div class="section-card home-today-card">
+            <div class="section-title-row">
+              <h3>오늘 할 공부</h3>
+              <button class="mini-btn" onclick="goTodayPlan()">수정</button>
+            </div>
+            <div id="homePlanList" class="plan-list empty-box">
+              오늘 공부가 아직 없어요.
+            </div>
+          </div>
+
+          <div class="section-card home-week-card">
+            <div class="section-title-row">
+              <h3>이번 주 공부 계획표</h3>
+              <button class="mini-btn" onclick="goTodayPlan()">계획 수립</button>
+            </div>
+            <div id="homeWeeklyPlans" class="weekly-plan-list"></div>
+          </div>
+
+          <div class="section-card home-dday-card">
+            <div class="section-title-row">
+              <h3>다가오는 디데이</h3>
+              <button class="mini-btn" onclick="showTab('dday')">등록</button>
+            </div>
+            <div id="homeDdayList" class="dday-list empty-box">
+              등록된 디데이가 없어요.
+            </div>
+          </div>
+        </section>
+
+        <!-- 계획 -->
+        <section id="tab-plan" class="tab-page">
+          <div class="section-card">
+            <h3>날짜 선택</h3>
+            <div class="plan-mode-tabs">
+              <button id="weekModeBtn" class="plan-mode-btn active" onclick="setPlanMode('week')">1주일</button>
+              <button id="rangeModeBtn" class="plan-mode-btn" onclick="setPlanMode('range')">기간 선택</button>
+            </div>
+            <div id="planDatePicker" class="plan-date-picker"></div>
+          </div>
+
+          <div class="section-card">
+            <h3>공부할 것</h3>
+            <p id="planAddHelp" class="help-text">날짜를 고른 뒤 카드를 누르면 공부 계획에 추가돼요.</p>
+            <div id="planStudyItemList" class="study-card-list empty-box">
+              공부할 것이 아직 없어요.
+            </div>
+            <div class="input-row quick-plan-row">
+              <input id="quickPlanInput" class="text-input" type="text" placeholder="직접 입력하기" />
+              <button class="add-btn" onclick="addQuickPlan()">입력</button>
+            </div>
+          </div>
+
+          <div class="section-card">
+            <h3>이번 주 공부 계획표</h3>
+            <div id="planWeeklyPlans" class="weekly-plan-list"></div>
+          </div>
+        </section>
+
+        <!-- 공부할 것 -->
+        <section id="tab-items" class="tab-page">
+          <div class="section-card">
+            <h3>공부할 것</h3>
+            <p class="help-text">자주 하는 공부를 저장해 두세요.</p>
+
+            <div class="input-row">
+              <input id="newItemInput" class="text-input" type="text" placeholder="예: 영어 단어 30개" />
+              <button class="add-btn" onclick="addStudyItem()">추가</button>
+            </div>
+          </div>
+
+          <div class="section-card">
+            <h3>저장된 공부</h3>
+            <div id="studyItemList" class="study-card-list empty-box">
+              아직 저장된 공부가 없어요.
+            </div>
+          </div>
+        </section>
+
+        <!-- 디데이 -->
+        <section id="tab-dday" class="tab-page">
+          <div class="section-card">
+            <h3>디데이 등록</h3>
+            <p class="help-text">제목, 날짜, 대상만 간단히 입력해요.</p>
+
+            <input id="ddayTitleInput" class="text-input full" type="text" placeholder="예: 기말고사" />
+            <input id="ddayDateInput" class="text-input full" type="date" />
+
+            <select id="ddayTargetSelect" class="text-input full">
+              <option value="family">가족 전체</option>
+            </select>
+
+            <button class="primary-btn slim" onclick="addDday()">디데이 추가</button>
+          </div>
+
+          <div class="section-card">
+            <h3>디데이 목록</h3>
+            <div id="ddayList" class="dday-list empty-box">
+              등록된 디데이가 없어요.
+            </div>
+          </div>
+        </section>
+
+        <!-- 학습현황 -->
+        <section id="tab-family" class="tab-page">
+          <div class="section-card family-score-card">
+            <h3>실력 up포인트</h3>
+            <div id="familyScoreList" class="family-list"></div>
+          </div>
+
+          <div class="section-card family-today-status-card">
+            <h3>오늘 학습현황</h3>
+            <div id="familyTodayList" class="family-list"></div>
+          </div>
+
+          <div id="familyAdminCard" class="section-card admin-card">
+            <h3>가족 이름 수정</h3>
+            <div id="familyAdminList" class="admin-name-list"></div>
+          </div>
+
+          <div class="section-card family-week-status-card">
+            <h3>이번주 학습활동 완료율</h3>
+            <div id="familyGraph" class="graph-list"></div>
+          </div>
+        </section>
+
+        <!-- 행복 우체통 -->
+        <section id="tab-mailbox" class="tab-page">
+          <div class="section-card mailbox-main-card">
+            <div class="section-title-row">
+              <div>
+                <h3>💌 행복 우체통</h3>
+                <p class="help-text">가족에게 따뜻한 한마디를 남겨요.</p>
+              </div>
+            </div>
+
+            <div class="mailbox-compose">
+              <textarea id="mailboxContentInput" class="text-input mailbox-textarea" placeholder="가족에게 남길 글을 적어 보세요."></textarea>
+              <button id="mailboxSendBtn" class="primary-btn slim" onclick="sendMailboxPost()">글 남기기</button>
+            </div>
+          </div>
+
+          <div class="section-card">
+            <h3>최근 7일 행복 우체통</h3>
+            <p class="help-text">가족이 남긴 글을 시간순으로 확인해요.</p>
+            <div id="mailboxList" class="mailbox-list empty-box">
+              아직 남겨진 글이 없어요.
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <nav class="bottom-nav">
+        <button class="nav-btn active" data-tab="home" onclick="showTab('home')">
+          <span>🏠</span>
+          홈
+        </button>
+        <button class="nav-btn" data-tab="plan" onclick="showTab('plan')">
+          <span>🗓️</span>
+          계획
+        </button>
+        <button class="nav-btn" data-tab="items" onclick="showTab('items')">
+          <span>📚</span>
+          공부할 것
+        </button>
+        <button class="nav-btn" data-tab="dday" onclick="showTab('dday')">
+          <span>🎯</span>
+          디데이
+        </button>
+        <button class="nav-btn" data-tab="family" onclick="showTab('family')">
+          <span>👨‍👩‍👧‍👦</span>
+          학습현황
+        </button>
+        <button class="nav-btn" data-tab="mailbox" onclick="showTab('mailbox')">
+          <span>💌</span>
+          우체통
+        </button>
+      </nav>
+    </section>
+
+    <div id="toast" class="toast"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="app.js"></script>
+</body>
+</html>
