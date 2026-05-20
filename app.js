@@ -144,6 +144,17 @@ function addDays(dateText, offset) {
   return dateToText(date);
 }
 
+function getDateDiffDays(fromDateText, toDateText) {
+  const fromDate = new Date(fromDateText + "T00:00:00");
+  const toDate = new Date(toDateText + "T00:00:00");
+  return Math.round((toDate - fromDate) / 86400000);
+}
+
+function getCompletionScoreForDate(planDateText, completedDateText = getTodayText()) {
+  const diffDays = getDateDiffDays(planDateText, completedDateText);
+  return diffDays <= 1 ? 100 : 40;
+}
+
 function getWeekDates(dateText) {
   const date = new Date(dateText + "T00:00:00");
   const day = date.getDay();
@@ -525,13 +536,15 @@ async function checkAndGiveDailyScore(userId, date) {
     };
   }
 
+  const score = getCompletionScoreForDate(date, getTodayText());
+
   const { error: insertScoreError } = await supabaseClient
     .from("scores")
     .insert([
       {
         user_id: userId,
         date,
-        score: 100,
+        score,
         reason: "DAILY_COMPLETE",
       },
     ]);
@@ -541,7 +554,7 @@ async function checkAndGiveDailyScore(userId, date) {
   const users = await fetchUsers();
   const user = users.find((row) => row.userId === userId);
   const currentScore = user ? Number(user.score || 0) : Number(app.user?.score || 0);
-  const nextScore = currentScore + 100;
+  const nextScore = currentScore + score;
 
   const { error: updateUserError } = await supabaseClient
     .from("users")
@@ -560,8 +573,8 @@ async function checkAndGiveDailyScore(userId, date) {
 
   return {
     awarded: true,
-    score: 100,
-    message: "\uc624\ub298 \uacf5\ubd80\ub97c \ubaa8\ub450 \uc644\ub8cc\ud574\uc11c 100\uc810\uc744 \ubc1b\uc558\uc2b5\ub2c8\ub2e4!",
+    score,
+    message: `${formatShortDate(date)} 공부를 모두 완료해서 ${score}점을 받았습니다!`,
   };
 }
 
@@ -978,6 +991,10 @@ function showTab(tabName) {
   }
 }
 
+function showHomeTab() {
+  showTab("home");
+}
+
 async function login() {
   const input = $("loginCodeInput");
   const msg = $("loginMsg");
@@ -1000,6 +1017,8 @@ async function login() {
     const quotePromise = typeLoginQuote();
     app.user = await loginWithCode(loginCode);
     app.adminMode = false;
+    app.today = getTodayText();
+    app.selectedDate = app.today;
     resetDataCacheKeys();
 
     localStorage.setItem("homeStudyUser", JSON.stringify(app.user));
@@ -1010,6 +1029,7 @@ async function login() {
     await quotePromise;
 
     showScreen("main");
+    showHomeTab();
     showToast(`🎉 ${app.user.name}님, 어서 오세요!`);
   } catch (err) {
     hideLoginQuote();
@@ -1046,11 +1066,14 @@ async function tryAutoLogin() {
     if (!app.user || !app.user.userId) return;
 
     app.adminMode = false;
+    app.today = getTodayText();
+    app.selectedDate = app.today;
     resetDataCacheKeys();
 
     setText("helloTitle", `${app.user.name}의 공부방`);
 
     showScreen("main");
+    showHomeTab();
     await loadInitialData();
   } catch (err) {
     localStorage.removeItem("homeStudyUser");
@@ -1244,23 +1267,30 @@ function renderAll() {
 function renderHome() {
   const deviceTodayText = getTodayText();
   const todayText = app.today || deviceTodayText;
-  const todayWeek = app.weeklyPlans.find((day) => day.date === todayText);
-  const todayPlans = todayWeek ? todayWeek.plans : app.plans;
-  const total = todayPlans.length;
-  const done = todayPlans.filter((plan) => plan.done).length;
+  const selectedDate = getHomeSelectedDate();
+  const selectedWeek = app.weeklyPlans.find((day) => day.date === selectedDate);
+  const selectedPlans = selectedWeek ? selectedWeek.plans : selectedDate === app.selectedDate ? app.plans : [];
+  const total = selectedPlans.length;
+  const done = selectedPlans.filter((plan) => plan.done).length;
+  const isTodaySelected = selectedDate === deviceTodayText;
 
-  setText("todayLabel", `오늘 내 공부 · ${formatDateKorean(todayText)}`);
+  setText("homePlanTitle", isTodaySelected ? "오늘 할 공부" : `${formatShortDate(selectedDate)} 할 공부`);
+
+  setText(
+    "todayLabel",
+    `${isTodaySelected ? "오늘 내 공부" : "선택한 공부"} · ${formatDateKorean(selectedDate)}`
+  );
   setText("todayProgressTitle", `${total}개 중 ${done}개 완료`);
 
   if (total > 0 && done === total) {
-    setText("todayScoreHint", "오늘 공부 완료! 100점 도전 성공!");
+    setText("todayScoreHint", isTodaySelected ? "오늘 공부 완료! 100점 도전 성공!" : "선택한 날짜 공부 완료!");
   } else {
-    setText("todayScoreHint", "오늘 공부를 모두 끝내면 +100점");
+    setText("todayScoreHint", isTodaySelected ? "오늘 공부를 모두 끝내면 +100점" : "공부를 끝냈다면 체크해 주세요.");
   }
 
   const homePlanList = $("homePlanList");
   if (homePlanList) {
-    renderPlanList(homePlanList, todayPlans, true, todayText === deviceTodayText);
+    renderPlanList(homePlanList, selectedPlans, true, isThisWeekDate(selectedDate));
   }
 
   renderWeeklyPlans("homeWeeklyPlans", app.today || getTodayText(), app.weeklyPlans);
@@ -1275,6 +1305,29 @@ function renderHome() {
   if (homeDdayList) {
     renderDdayList(homeDdayList, upcoming, false);
   }
+}
+
+function getHomeSelectedDate() {
+  const todayText = app.today || getTodayText();
+  return isThisWeekDate(app.selectedDate) ? app.selectedDate : todayText;
+}
+
+function isThisWeekDate(dateText) {
+  if (!dateText) return false;
+
+  const todayText = app.today || getTodayText();
+  return getWeekStart(dateText) === getWeekStart(todayText);
+}
+
+function getHomeWeekCellAttrs(dateText) {
+  return ` role="button" tabindex="0" onclick="selectHomeWeekDate('${dateText}')" onkeydown="handleHomeWeekCellKey(event, '${dateText}')"`;
+}
+
+function handleHomeWeekCellKey(event, dateText) {
+  if (event.key !== "Enter" && event.key !== " ") return;
+
+  event.preventDefault();
+  selectHomeWeekDate(dateText);
 }
 
 function renderHomeFamilySummary() {
@@ -1310,6 +1363,8 @@ function renderWeeklyPlans(targetId, baseDate, weekPlanRows) {
   if (!target) return;
 
   const todayText = app.today || getTodayText();
+  const isHomeWeeklyPlans = targetId === "homeWeeklyPlans";
+  const selectedDate = isHomeWeeklyPlans ? getHomeSelectedDate() : app.selectedDate;
   const dayNames = ["월", "화", "수", "목", "금", "토", "일"];
   const weekDates = getWeekDates(baseDate);
   const safeRows = Array.isArray(weekPlanRows) ? weekPlanRows : [];
@@ -1329,10 +1384,11 @@ function renderWeeklyPlans(targetId, baseDate, weekPlanRows) {
         .map((day, index) => {
           const date = new Date(day.date + "T00:00:00");
           const status = day.date === todayText ? "today" : day.date < todayText ? "past" : "future";
-          const selected = targetId === "planWeeklyPlans" && day.date === app.selectedDate ? "selected" : "";
+          const selected = day.date === selectedDate ? "selected" : "";
+          const clickAttr = isHomeWeeklyPlans ? getHomeWeekCellAttrs(day.date) : "";
 
           return `
-            <div class="weekly-calendar-cell ${status} ${selected}">
+            <div${clickAttr} class="weekly-calendar-cell ${status} ${selected}">
               <span>${dayNames[index]}</span>
               <strong>${date.getMonth() + 1}/${date.getDate()}</strong>
             </div>
@@ -1345,7 +1401,8 @@ function renderWeeklyPlans(targetId, baseDate, weekPlanRows) {
       ${weeklyPlans
         .map((day) => {
           const status = day.date === todayText ? "today" : day.date < todayText ? "past" : "future";
-          const selected = targetId === "planWeeklyPlans" && day.date === app.selectedDate ? "selected" : "";
+          const selected = day.date === selectedDate ? "selected" : "";
+          const clickAttr = isHomeWeeklyPlans ? getHomeWeekCellAttrs(day.date) : "";
 
           const planHtml = day.plans.length
             ? day.plans
@@ -1360,7 +1417,7 @@ function renderWeeklyPlans(targetId, baseDate, weekPlanRows) {
             : `<li class="empty">없음</li>`;
 
           return `
-            <div class="weekly-calendar-cell ${status} ${selected}">
+            <div${clickAttr} class="weekly-calendar-cell ${status} ${selected}">
               <ul class="weekly-day-plans">
                 ${planHtml}
               </ul>
@@ -1374,11 +1431,12 @@ function renderWeeklyPlans(targetId, baseDate, weekPlanRows) {
       ${weeklyPlans
         .map((day) => {
           const status = day.date === todayText ? "today" : day.date < todayText ? "past" : "future";
-          const selected = targetId === "planWeeklyPlans" && day.date === app.selectedDate ? "selected" : "";
+          const selected = day.date === selectedDate ? "selected" : "";
+          const clickAttr = isHomeWeeklyPlans ? getHomeWeekCellAttrs(day.date) : "";
           const isComplete = day.plans.length > 0 && day.plans.every((plan) => plan.done);
 
           return `
-            <div class="weekly-calendar-cell ${status} ${selected}">
+            <div${clickAttr} class="weekly-calendar-cell ${status} ${selected}">
               ${isComplete ? `<span class="complete-star">★</span>` : ""}
             </div>
           `;
@@ -1393,7 +1451,7 @@ function renderPlanScreen() {
 
   const planList = $("planList");
   if (planList) {
-    renderPlanList(planList, app.plans, true, app.selectedDate === getTodayText());
+    renderPlanList(planList, app.plans, true, isThisWeekDate(app.selectedDate));
   }
 
   renderWeeklyPlans("planWeeklyPlans", app.selectedDate, app.planWeekPlans);
@@ -1964,7 +2022,7 @@ async function togglePlanDone(planId) {
     renderFamilySummary();
 
     if (scoreResult.awarded) {
-      showToast("오늘 공부를 모두 완료해서 100점을 받았습니다!");
+      showToast(scoreResult.message);
     } else {
       showToast("완료 상태를 바꿨어요.");
     }
@@ -2009,6 +2067,17 @@ function changePlanDate() {
 function moveDate(offset) {
   app.selectedDate = addDays(app.selectedDate, offset);
   loadPlansForSelectedDate();
+}
+
+function selectHomeWeekDate(dateText) {
+  if (!isThisWeekDate(dateText)) return;
+
+  app.planMode = "week";
+  app.selectedDate = dateText;
+  const cachedDay = app.weeklyPlans.find((day) => day.date === dateText);
+  if (cachedDay) app.plans = cachedDay.plans || [];
+  renderHome();
+  loadPlansForSelectedDate({ ensurePlanWeek: false });
 }
 
 function goTodayPlan() {
