@@ -1272,6 +1272,8 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   flex-shrink: 0;
 }
 
@@ -1294,6 +1296,22 @@ button {
 .mailbox-new-badge.hidden,
 .mailbox-preview-box.hidden {
   display: none;
+}
+
+.mailbox-push-btn {
+  min-height: 34px;
+  padding: 0 11px;
+  border-radius: 999px;
+  background: #fff0d9;
+  color: #7a3f12;
+  border: 1px solid rgba(249, 115, 22, 0.22);
+  font-size: 12px;
+  font-weight: 950;
+  box-shadow: 0 5px 12px rgba(249, 115, 22, 0.12);
+}
+
+.mailbox-push-btn:active {
+  transform: translateY(1px);
 }
 
 .mailbox-preview-box {

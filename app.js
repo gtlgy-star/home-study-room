@@ -1,6 +1,7 @@
 const SUPABASE_URL = "https://ykqedrmzltvteafsjkvk.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_a1KnbwXBq5PEvPIwkwnsGA_twi5_RdD";
 const ADMIN_PASSWORD = "2026";
+const VAPID_PUBLIC_KEY = "BN7KyENOF3eGocaEnAaUgEh4PzJqg2maILB_gHg4jmx-lPLG5X8GyeafComw6-lej1hFN0hT-rhwqwUlWBmoW3A";
 
 const supabaseClient = window.supabase.createClient(
   SUPABASE_URL,
@@ -43,6 +44,24 @@ const app = {
 };
 
 const FAMILY_ORDER = ["dad", "mom", "high", "middle"];
+
+const LOGIN_PHOTOS = [
+  "login-photos/ChatGPT Image 2026년 5월 19일 오전 01_11_06.png",
+  "login-photos/ChatGPT Image 2026년 5월 20일 오후 08_01_40.png",
+  "login-photos/ChatGPT Image 2026년 5월 20일 오후 08_13_27.png",
+  "login-photos/ChatGPT Image 2026년 5월 20일 오후 08_18_46.png",
+  "login-photos/ChatGPT Image 2026년 5월 20일 오후 08_22_41.png",
+  "login-photos/ChatGPT Image 2026년 5월 20일 오후 08_26_07.png",
+  "login-photos/ChatGPT Image 2026년 5월 20일 오후 08_35_59.png",
+  "login-photos/ChatGPT Image 2026년 5월 20일 오후 08_37_56.png",
+  "login-photos/ChatGPT Image 2026년 5월 20일 오후 08_41_45.png",
+  "login-photos/ChatGPT Image 2026년 5월 20일 오후 08_44_45.png",
+  "login-photos/ChatGPT Image 2026년 5월 20일 오후 08_48_36.png",
+  "login-photos/ChatGPT Image 2026년 5월 20일 오후 08_53_20.png",
+  "login-photos/ChatGPT Image 2026년 5월 20일 오후 08_55_38.png",
+  "login-photos/ChatGPT Image 2026년 5월 20일 오후 08_57_21.png",
+  "login-photos/ChatGPT Image 2026년 5월 20일 오후 08_59_12.png",
+];
 
 const STUDY_QUOTES = [
   "배우고 때때로 익히면 또한 기쁘지 아니한가. <공자>",
@@ -193,6 +212,22 @@ function getDayOfYear(date = new Date()) {
 
 function getTodayQuote() {
   return STUDY_QUOTES[getDayOfYear() % STUDY_QUOTES.length];
+}
+
+function getDailyLoginPhoto() {
+  if (!LOGIN_PHOTOS.length) return "family-login.jpg";
+
+  return LOGIN_PHOTOS[getDayOfYear() % LOGIN_PHOTOS.length];
+}
+
+function setDailyLoginPhoto() {
+  const photo = document.querySelector(".login-family-photo");
+  if (!photo) return;
+
+  const frame = photo.parentElement;
+  if (frame) frame.classList.remove("is-hidden");
+
+  photo.src = encodeURI(getDailyLoginPhoto());
 }
 
 function hideLoginQuote() {
@@ -472,6 +507,38 @@ async function removePlan(userId, planId) {
   if (error) throw error;
 }
 
+async function savePushSubscriptionToSupabase(subscription) {
+  if (!app.user || !app.user.userId) {
+    alert("로그인 후 알림을 설정할 수 있어요.");
+    return;
+  }
+
+  const subscriptionJson = subscription.toJSON();
+  const endpoint = subscriptionJson.endpoint;
+  const keys = subscriptionJson.keys || {};
+
+  const { error } = await supabaseClient
+    .from("push_subscriptions")
+    .upsert(
+      [
+        {
+          user_id: app.user.userId,
+          endpoint,
+          p256dh: keys.p256dh,
+          auth: keys.auth,
+          user_agent: navigator.userAgent,
+          is_active: true,
+          updated_at: new Date().toISOString(),
+        },
+      ],
+      {
+        onConflict: "endpoint",
+      }
+    );
+
+  if (error) throw error;
+}
+
 async function removePlansByTitle(userId, dates, title) {
   const { error } = await supabaseClient
     .from("plans")
@@ -702,7 +769,7 @@ async function fetchMailboxMessages() {
     .select("*")
     .eq("target_user_id", "family")
     .gte("created_at", sevenDaysAgo)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: false });
 
   if (messagesError) throw messagesError;
 
@@ -940,6 +1007,76 @@ function showToast(message) {
   showToast.timer = setTimeout(() => {
     toast.classList.remove("show");
   }, 2200);
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+
+  for (let index = 0; index < rawData.length; index += 1) {
+    outputArray[index] = rawData.charCodeAt(index);
+  }
+
+  return outputArray;
+}
+
+function isPushNotificationSupported() {
+  return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+}
+
+async function requestStudyRoomNotificationPermission() {
+  if (!isPushNotificationSupported()) {
+    alert("이 브라우저에서는 푸시 알림을 사용할 수 없어요.");
+    return false;
+  }
+
+  const permission = await Notification.requestPermission();
+
+  if (permission !== "granted") {
+    alert("알림이 허용되지 않았어요.");
+    return false;
+  }
+
+  return true;
+}
+
+async function subscribeStudyRoomPush() {
+  try {
+    if (!app.user || !app.user.userId) {
+      alert("로그인 후 알림을 설정할 수 있어요.");
+      return;
+    }
+
+    if (!isPushNotificationSupported()) {
+      alert("이 브라우저에서는 푸시 알림을 사용할 수 없어요.");
+      return;
+    }
+
+    if (!VAPID_PUBLIC_KEY) {
+      alert("푸시 알림 키가 아직 설정되지 않았어요.");
+      return;
+    }
+
+    const isPermissionGranted = await requestStudyRoomNotificationPermission();
+    if (!isPermissionGranted) return;
+
+    const registration = await navigator.serviceWorker.ready;
+    const existingSubscription = await registration.pushManager.getSubscription();
+    const subscription =
+      existingSubscription ||
+      (await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      }));
+
+    await savePushSubscriptionToSupabase(subscription);
+    alert("행복 우체통 알림 준비가 완료되었어요.");
+  } catch (err) {
+    console.error("Study room push subscription failed:", err);
+    alert("알림 설정 중 문제가 생겼어요.");
+  }
 }
 
 function showScreen(screenName) {
@@ -2480,6 +2617,7 @@ function addEnterHandler(id, callback) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  setDailyLoginPhoto();
   hideLoginQuote();
 
   addEnterHandler("loginCodeInput", login);
