@@ -1,6 +1,6 @@
 const SUPABASE_URL = "https://ykqedrmzltvteafsjkvk.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_a1KnbwXBq5PEvPIwkwnsGA_twi5_RdD";
-const ADMIN_PASSWORD = "2026";
+const ADMIN_PASSWORD = "0801";
 const VAPID_PUBLIC_KEY = "BN7KyENOF3eGocaEnAaUgEh4PzJqg2maILB_gHg4jmx-lPLG5X8GyeafComw6-lej1hFN0hT-rhwqwUlWBmoW3A";
 
 const supabaseClient = window.supabase.createClient(
@@ -2566,24 +2566,30 @@ function renderFamilyAdmin() {
   list.innerHTML = app.familySummary
     .map(
       (member) => `
-      <div class="admin-name-row">
-        <input
-          id="adminName_${escapeHtml(member.userId)}"
-          class="text-input"
-          type="text"
-          value="${escapeHtml(member.name)}"
-        />
-        <input
-          id="adminScore_${escapeHtml(member.userId)}"
-          class="text-input admin-score-input"
-          type="number"
-          inputmode="numeric"
-          min="0"
-          step="1"
-          value="${Number(member.score || 0)}"
-        />
-        <button class="add-btn" onclick="saveFamilyMemberName('${member.userId}')">저장</button>
-        <button class="add-btn score-save-btn" onclick="saveFamilyMemberScore('${member.userId}')">점수</button>
+      <div class="admin-member-card">
+        <div class="admin-field-row">
+          <label for="adminName_${escapeHtml(member.userId)}">이름</label>
+          <input
+            id="adminName_${escapeHtml(member.userId)}"
+            class="text-input"
+            type="text"
+            value="${escapeHtml(member.name)}"
+          />
+          <button class="add-btn" onclick="saveFamilyMemberName('${member.userId}')">저장</button>
+        </div>
+        <div class="admin-field-row">
+          <label for="adminScore_${escapeHtml(member.userId)}">포인트</label>
+          <input
+            id="adminScore_${escapeHtml(member.userId)}"
+            class="text-input admin-score-input"
+            type="number"
+            inputmode="numeric"
+            min="0"
+            step="1"
+            value="${Number(member.score || 0)}"
+          />
+          <button class="add-btn score-save-btn" onclick="saveFamilyMemberScore('${member.userId}')">점수 저장</button>
+        </div>
       </div>
     `
     )

@@ -1148,13 +1148,29 @@ button {
   gap: 10px;
 }
 
-.admin-name-row {
+.admin-member-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 82px auto auto;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(228, 175, 64, 0.28);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.admin-field-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  align-items: center;
   gap: 8px;
 }
 
-.admin-name-row .text-input {
+.admin-field-row label {
+  color: #7b5a12;
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.admin-field-row .text-input {
   min-height: 48px;
   font-size: 16px;
 }
@@ -1163,14 +1179,14 @@ button {
   text-align: center;
 }
 
-.admin-name-row .add-btn {
+.admin-field-row .add-btn {
   min-height: 48px;
   min-width: 64px;
   font-size: 15px;
 }
 
-.admin-name-row .score-save-btn {
-  min-width: 58px;
+.admin-field-row .score-save-btn {
+  min-width: 86px;
   background: linear-gradient(135deg, #ffcf8a, #ffad73);
 }
 
@@ -1508,11 +1524,12 @@ button {
     font-size: 18px;
   }
 
-  .admin-name-row {
-    grid-template-columns: minmax(0, 1fr) 82px;
+  .admin-field-row {
+    grid-template-columns: 48px minmax(0, 1fr);
   }
 
-  .admin-name-row .add-btn {
+  .admin-field-row .add-btn {
+    grid-column: 2;
     width: 100%;
   }
 }
