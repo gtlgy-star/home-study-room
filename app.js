@@ -821,6 +821,35 @@ async function insertMailboxPost({ senderUserId, content }) {
   return data;
 }
 
+async function sendMailboxPushNotification({ senderUserId, targetUserId = "family" }) {
+  const messageScope = targetUserId === "family" ? "family" : "user";
+
+  try {
+    console.log("[MESSAGE SAVED - PUSH START]", {
+      senderUserId,
+      targetUserId,
+      messageScope,
+    });
+
+    const result = await supabaseClient.functions.invoke("send-message-push", {
+      body: {
+        senderUserId,
+        targetUserId,
+        messageScope,
+      },
+    });
+
+    if (result.error) {
+      console.warn("[MESSAGE PUSH FAILED]", result.error);
+      return;
+    }
+
+    console.log("[MESSAGE PUSH RESULT]", result);
+  } catch (error) {
+    console.warn("[MESSAGE PUSH FAILED]", error);
+  }
+}
+
 async function sendMailboxPost() {
   const input = $("mailboxContentInput");
 
@@ -834,9 +863,14 @@ async function sendMailboxPost() {
   }
 
   try {
-    await insertMailboxPost({
+    const message = await insertMailboxPost({
       senderUserId: app.user.userId,
       content,
+    });
+
+    await sendMailboxPushNotification({
+      senderUserId: app.user.userId,
+      targetUserId: message.target_user_id || "family",
     });
 
     input.value = "";

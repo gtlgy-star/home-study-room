@@ -1268,6 +1268,20 @@ button {
   border: 1px solid rgba(230, 210, 255, 0.9);
 }
 
+.mailbox-main-card .section-title-row {
+  gap: 8px;
+}
+
+.mailbox-main-card .section-title-row > div {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.mailbox-main-card .help-text {
+  white-space: nowrap;
+  font-size: 13px;
+}
+
 .mailbox-home-actions {
   display: inline-flex;
   align-items: center;
@@ -1299,14 +1313,17 @@ button {
 }
 
 .mailbox-push-btn {
-  min-height: 34px;
-  padding: 0 11px;
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 8px;
   border-radius: 999px;
   background: #fff0d9;
   color: #7a3f12;
   border: 1px solid rgba(249, 115, 22, 0.22);
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 950;
+  line-height: 1;
+  white-space: nowrap;
   box-shadow: 0 5px 12px rgba(249, 115, 22, 0.12);
 }
 
