@@ -2573,7 +2573,17 @@ function renderFamilyAdmin() {
           type="text"
           value="${escapeHtml(member.name)}"
         />
+        <input
+          id="adminScore_${escapeHtml(member.userId)}"
+          class="text-input admin-score-input"
+          type="number"
+          inputmode="numeric"
+          min="0"
+          step="1"
+          value="${Number(member.score || 0)}"
+        />
         <button class="add-btn" onclick="saveFamilyMemberName('${member.userId}')">저장</button>
+        <button class="add-btn score-save-btn" onclick="saveFamilyMemberScore('${member.userId}')">점수</button>
       </div>
     `
     )
@@ -2617,6 +2627,42 @@ async function saveFamilyMemberName(targetUserId) {
     showToast("가족 이름을 수정했어요.");
   } catch (err) {
     showToast(err.message || "이름을 저장하지 못했어요.");
+  }
+}
+
+async function saveFamilyMemberScore(targetUserId) {
+  const input = $(`adminScore_${targetUserId}`);
+  const nextScore = input ? Number(input.value) : NaN;
+
+  if (!Number.isFinite(nextScore) || nextScore < 0) {
+    showToast("0 이상의 포인트를 입력해 주세요.");
+    return;
+  }
+
+  try {
+    const { error } = await supabaseClient
+      .from("users")
+      .update({
+        score: Math.floor(nextScore),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", targetUserId);
+
+    if (error) throw error;
+
+    app.familySummary = await fetchFamilySummary(app.today || getTodayText());
+
+    if (app.user?.userId === targetUserId) {
+      app.user.score = Math.floor(nextScore);
+      localStorage.setItem("homeStudyUser", JSON.stringify(app.user));
+    }
+
+    renderFamilySummary();
+    renderHomeFamilySummary();
+
+    showToast("포인트를 저장했어요.");
+  } catch (err) {
+    showToast(err.message || "포인트를 저장하지 못했어요.");
   }
 }
 
