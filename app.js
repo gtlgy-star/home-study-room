@@ -30,6 +30,7 @@ const app = {
   familyWeeklySummaryKey: "",
 
   familySummary: [],
+  personalMonthlyScores: [],
   ddays: [],
   messages: [],
   unreadMailboxCount: 0,
@@ -171,7 +172,26 @@ function getDateDiffDays(fromDateText, toDateText) {
 
 function getCompletionScoreForDate(planDateText, completedDateText = getTodayText()) {
   const diffDays = getDateDiffDays(planDateText, completedDateText);
+  if (diffDays < 0) return 0;
   return diffDays <= 1 ? 100 : 40;
+}
+
+function getMonthStart(dateText) {
+  return `${dateText.slice(0, 7)}-01`;
+}
+
+function getNextMonthStart(dateText) {
+  const date = new Date(`${getMonthStart(dateText)}T00:00:00`);
+  date.setMonth(date.getMonth() + 1);
+  return dateToText(date);
+}
+
+function getMonthNumber(dateText) {
+  return Number(dateText.slice(5, 7));
+}
+
+function sumScores(scores) {
+  return scores.reduce((sum, row) => sum + Number(row.score || 0), 0);
 }
 
 function getWeekDates(dateText) {
@@ -567,7 +587,52 @@ async function updatePlanDone(userId, planId, nextDone) {
   return mapPlan(data);
 }
 
+async function fetchScoresForMonth(userId, dateText) {
+  const { data, error } = await supabaseClient
+    .from("scores")
+    .select("*")
+    .eq("user_id", userId)
+    .gte("date", getMonthStart(dateText))
+    .lt("date", getNextMonthStart(dateText));
+
+  if (error) throw error;
+
+  return data || [];
+}
+
+async function fetchUserMonthScoreTotal(userId, dateText) {
+  return sumScores(await fetchScoresForMonth(userId, dateText));
+}
+
+async function syncUserMonthlyScore(userId, dateText) {
+  const monthlyScore = await fetchUserMonthScoreTotal(userId, dateText);
+
+  const { error } = await supabaseClient
+    .from("users")
+    .update({
+      score: monthlyScore,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId);
+
+  if (error) throw error;
+
+  if (app.user && app.user.userId === userId) {
+    app.user.score = monthlyScore;
+    localStorage.setItem("homeStudyUser", JSON.stringify(app.user));
+  }
+
+  return monthlyScore;
+}
+
 async function checkAndGiveDailyScore(userId, date) {
+  if (getDateDiffDays(date, getTodayText()) < 0) {
+    return {
+      awarded: false,
+      message: "\ubbf8\ub798 \ub0a0\uc9dc \uacf5\ubd80\ub294 \ud574\ub2f9 \ub0a0\uc774 \ub418\uc5c8\uc744 \ub54c \uc810\uc218\ub97c \ubc1b\uc744 \uc218 \uc788\uc2b5\ub2c8\ub2e4.",
+    };
+  }
+
   const plans = await fetchPlansForDate(userId, date);
 
   if (!plans.length) {
@@ -618,31 +683,60 @@ async function checkAndGiveDailyScore(userId, date) {
 
   if (insertScoreError) throw insertScoreError;
 
-  const users = await fetchUsers();
-  const user = users.find((row) => row.userId === userId);
-  const currentScore = user ? Number(user.score || 0) : Number(app.user?.score || 0);
-  const nextScore = currentScore + score;
-
-  const { error: updateUserError } = await supabaseClient
-    .from("users")
-    .update({
-      score: nextScore,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("user_id", userId);
-
-  if (updateUserError) throw updateUserError;
-
-  if (app.user && app.user.userId === userId) {
-    app.user.score = nextScore;
-    localStorage.setItem("homeStudyUser", JSON.stringify(app.user));
-  }
+  await syncUserMonthlyScore(userId, date);
 
   return {
     awarded: true,
     score,
     message: `${formatShortDate(date)} 공부를 모두 완료해서 ${score}점을 받았습니다!`,
   };
+}
+
+async function settleDueDailyScores(date = getTodayText()) {
+  if (date !== getTodayText()) return [];
+
+  const users = await fetchUsers();
+  const results = [];
+
+  for (const user of users) {
+    results.push(await checkAndGiveDailyScore(user.userId, date));
+  }
+
+  return results;
+}
+
+async function syncFamilyMonthlyScores(date = getTodayText()) {
+  const users = await fetchUsers();
+
+  for (const user of users) {
+    await syncUserMonthlyScore(user.userId, date);
+  }
+}
+
+async function fetchPersonalMonthlyScores(userId, year = getTodayText().slice(0, 4)) {
+  if (!userId || userId === "admin") return [];
+
+  const startDate = `${year}-05-01`;
+  const endDate = `${Number(year) + 1}-01-01`;
+
+  const { data, error } = await supabaseClient
+    .from("scores")
+    .select("date,score")
+    .eq("user_id", userId)
+    .gte("date", startDate)
+    .lt("date", endDate);
+
+  if (error) throw error;
+
+  const rows = data || [];
+  return Array.from({ length: 8 }, (_, index) => {
+    const month = index + 5;
+    const score = rows
+      .filter((row) => getMonthNumber(row.date) === month)
+      .reduce((sum, row) => sum + Number(row.score || 0), 0);
+
+    return { month, score };
+  });
 }
 
 async function fetchFamilySummary(date) {
@@ -662,8 +756,17 @@ async function fetchFamilySummary(date) {
 
   if (scoresError) throw scoresError;
 
+  const { data: monthScoresData, error: monthScoresError } = await supabaseClient
+    .from("scores")
+    .select("*")
+    .gte("date", getMonthStart(date))
+    .lt("date", getNextMonthStart(date));
+
+  if (monthScoresError) throw monthScoresError;
+
   const plans = (plansData || []).map(mapPlan);
   const scores = scoresData || [];
+  const monthScores = monthScoresData || [];
 
   return users.map((user) => {
     const userPlans = plans.filter((plan) => plan.userId === user.userId);
@@ -674,6 +777,10 @@ async function fetchFamilySummary(date) {
       .filter((score) => score.user_id === user.userId)
       .reduce((sum, score) => sum + Number(score.score || 0), 0);
 
+    const monthlyScore = monthScores
+      .filter((score) => score.user_id === user.userId)
+      .reduce((sum, score) => sum + Number(score.score || 0), 0);
+
     return {
       userId: user.userId,
       name: user.name,
@@ -681,6 +788,7 @@ async function fetchFamilySummary(date) {
       done,
       todayScore,
       score: Number(user.score || 0),
+      monthlyScore,
       completeRate: total === 0 ? 0 : Math.round((done / total) * 100),
     };
   });
@@ -1282,7 +1390,12 @@ async function loadInitialData() {
     app.selectedDate = app.selectedDate || app.today;
     app.studyItems = app.adminMode ? [] : await fetchStudyItems(app.user.userId);
     app.plans = app.adminMode ? [] : await fetchPlansForDate(app.user.userId, app.selectedDate);
+    await settleDueDailyScores(app.today);
+    await syncFamilyMonthlyScores(app.today);
     app.familySummary = await fetchFamilySummary(app.today);
+    app.personalMonthlyScores = app.adminMode
+      ? []
+      : await fetchPersonalMonthlyScores(app.user.userId, app.today.slice(0, 4));
     app.ddays = normalizeDdays(await fetchDdays(app.user.userId));
     await loadMailboxMessages();
 
@@ -1433,6 +1546,21 @@ function renderAll() {
   renderDdays();
   renderFamilySummary();
   renderMailbox();
+}
+
+function startDateRolloverWatcher() {
+  setInterval(() => {
+    const today = getTodayText();
+    if (today === app.today) return;
+
+    app.today = today;
+    app.selectedDate = today;
+    resetDataCacheKeys();
+
+    if (app.user) {
+      loadInitialData();
+    }
+  }, 60000);
 }
 
 function renderHome() {
@@ -2474,13 +2602,19 @@ function renderFamilySummary() {
   const scoreList = $("familyScoreList") || legacyList;
   const todayList = $("familyTodayList") || legacyList;
   const graph = $("familyGraph");
+  const scoreTitle = $("familyScoreTitle");
 
   if (!scoreList || !todayList || !graph) return;
+
+  if (scoreTitle) {
+    scoreTitle.textContent = `실력 up 포인트(${getMonthNumber(app.today || getTodayText())}월)`;
+  }
 
   if (!app.familySummary.length) {
     scoreList.innerHTML = `<div class="empty-box">가족 포인트가 아직 없어요.</div>`;
     todayList.innerHTML = `<div class="empty-box">오늘 학습현황이 아직 없어요.</div>`;
     graph.innerHTML = `<div class="empty-box">그래프를 표시할 데이터가 없어요.</div>`;
+    renderPersonalMonthlyScoreSummary();
     renderFamilyAdmin();
     return;
   }
@@ -2547,7 +2681,36 @@ function renderFamilySummary() {
     })
     .join("");
 
+  renderPersonalMonthlyScoreSummary();
   renderFamilyAdmin();
+}
+
+function renderPersonalMonthlyScoreSummary() {
+  const list = $("personalMonthlyScoreList");
+  if (!list) return;
+
+  if (app.adminMode || !app.user || !app.personalMonthlyScores.length) {
+    list.innerHTML = `<div class="empty-box">내 월별 포인트가 아직 없어요.</div>`;
+    return;
+  }
+
+  const total = app.personalMonthlyScores.reduce(
+    (sum, month) => sum + Number(month.score || 0),
+    0
+  );
+
+  list.innerHTML = `
+    <div class="monthly-score-table">
+      <div class="monthly-score-row head">
+        ${app.personalMonthlyScores.map((month) => `<div>${month.month}월</div>`).join("")}
+        <div>계</div>
+      </div>
+      <div class="monthly-score-row">
+        ${app.personalMonthlyScores.map((month) => `<div>${month.score || 0}점</div>`).join("")}
+        <div>${total}점</div>
+      </div>
+    </div>
+  `;
 }
 
 function renderFamilyAdmin() {
@@ -2710,5 +2873,6 @@ document.addEventListener("DOMContentLoaded", () => {
   addEnterHandler("newItemInput", addStudyItem);
   addEnterHandler("quickPlanInput", addQuickPlan);
 
+  startDateRolloverWatcher();
   tryAutoLogin();
 });

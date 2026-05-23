@@ -1031,6 +1031,11 @@ button {
   border-color: #cbdcff;
 }
 
+.family-monthly-score-card {
+  background: linear-gradient(135deg, #fff7fb 0%, #f2fbff 100%);
+  border-color: #ffd1e5;
+}
+
 .family-score-panel {
   display: grid;
 }
@@ -1129,6 +1134,45 @@ button {
 
 .family-score-row:not(.head) div {
   color: var(--primary-dark);
+}
+
+.monthly-score-table {
+  display: grid;
+  overflow-x: auto;
+  border: 1px solid rgba(203, 115, 156, 0.32);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.monthly-score-row {
+  display: grid;
+  grid-template-columns: repeat(9, minmax(58px, 1fr));
+  min-width: 522px;
+  align-items: center;
+  border-bottom: 1px solid rgba(203, 115, 156, 0.24);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.monthly-score-row:last-child {
+  border-bottom: 0;
+}
+
+.monthly-score-row.head {
+  background: #fff0f7;
+  color: #7f4161;
+  font-size: 13px;
+}
+
+.monthly-score-row div {
+  min-width: 0;
+  padding: 10px 6px;
+  text-align: center;
+  word-break: keep-all;
+}
+
+.monthly-score-row div + div {
+  border-left: 1px solid rgba(203, 115, 156, 0.24);
 }
 
 .crown-mark {
