@@ -45,6 +45,10 @@ const app = {
 };
 
 const FAMILY_ORDER = ["dad", "mom", "high", "middle"];
+const ADMIN_SCORE_ADJUSTMENT_REASON = "ADMIN_ADJUSTMENT";
+const WEEKLY_RATE_WINNER_REASON = "WEEKLY_RATE_WINNER";
+const WEEKLY_DONE_WINNER_REASON = "WEEKLY_DONE_WINNER";
+const WEEKLY_BONUS_SCORE = 300;
 
 const LOGIN_PHOTOS = [
   "login-photos/ChatGPT Image 2026년 5월 19일 오전 01_11_06.png",
@@ -208,6 +212,10 @@ function getWeekStart(dateText) {
 
 function getWeekEnd(dateText) {
   return getWeekDates(dateText)[6];
+}
+
+function getPreviousWeekDates(dateText) {
+  return getWeekDates(addDays(getWeekStart(dateText), -1));
 }
 
 function getWeekKey(dateText, userId = app.user?.userId || "") {
@@ -604,6 +612,44 @@ async function fetchUserMonthScoreTotal(userId, dateText) {
   return sumScores(await fetchScoresForMonth(userId, dateText));
 }
 
+async function setUserMonthlyScore(userId, dateText, nextScore) {
+  const targetScore = Math.floor(nextScore);
+  const monthStart = getMonthStart(dateText);
+  const nextMonthStart = getNextMonthStart(dateText);
+  const scores = await fetchScoresForMonth(userId, dateText);
+  const earnedScore = sumScores(
+    scores.filter((row) => row.reason !== ADMIN_SCORE_ADJUSTMENT_REASON)
+  );
+  const adjustmentScore = targetScore - earnedScore;
+
+  const { error: deleteError } = await supabaseClient
+    .from("scores")
+    .delete()
+    .eq("user_id", userId)
+    .eq("reason", ADMIN_SCORE_ADJUSTMENT_REASON)
+    .gte("date", monthStart)
+    .lt("date", nextMonthStart);
+
+  if (deleteError) throw deleteError;
+
+  if (adjustmentScore !== 0) {
+    const { error: insertError } = await supabaseClient
+      .from("scores")
+      .insert([
+        {
+          user_id: userId,
+          date: monthStart,
+          score: adjustmentScore,
+          reason: ADMIN_SCORE_ADJUSTMENT_REASON,
+        },
+      ]);
+
+    if (insertError) throw insertError;
+  }
+
+  return syncUserMonthlyScore(userId, dateText);
+}
+
 async function syncUserMonthlyScore(userId, dateText) {
   const monthlyScore = await fetchUserMonthScoreTotal(userId, dateText);
 
@@ -619,7 +665,6 @@ async function syncUserMonthlyScore(userId, dateText) {
 
   if (app.user && app.user.userId === userId) {
     app.user.score = monthlyScore;
-    localStorage.setItem("homeStudyUser", JSON.stringify(app.user));
   }
 
   return monthlyScore;
@@ -710,6 +755,59 @@ async function syncFamilyMonthlyScores(date = getTodayText()) {
 
   for (const user of users) {
     await syncUserMonthlyScore(user.userId, date);
+  }
+}
+
+function getWeeklyWinners(summary, metric) {
+  const topValue = Math.max(...summary.map((member) => Number(member[metric] || 0)));
+  if (topValue <= 0) return [];
+
+  return summary.filter((member) => Number(member[metric] || 0) === topValue);
+}
+
+async function giveWeeklyBonusOnce(userId, weekEndDate, reason) {
+  const { data: existingScores, error: checkError } = await supabaseClient
+    .from("scores")
+    .select("score_id")
+    .eq("user_id", userId)
+    .eq("date", weekEndDate)
+    .eq("reason", reason)
+    .limit(1);
+
+  if (checkError) throw checkError;
+  if (existingScores && existingScores.length > 0) return false;
+
+  const { error: insertError } = await supabaseClient
+    .from("scores")
+    .insert([
+      {
+        user_id: userId,
+        date: weekEndDate,
+        score: WEEKLY_BONUS_SCORE,
+        reason,
+      },
+    ]);
+
+  if (insertError) throw insertError;
+
+  await syncUserMonthlyScore(userId, weekEndDate);
+  return true;
+}
+
+async function settleCompletedWeeklyBonuses(date = getTodayText()) {
+  const weekDates = getPreviousWeekDates(date);
+  const weekStartDate = weekDates[0];
+  const weekEndDate = weekDates[6];
+  const summary = await fetchFamilyWeeklySummary(weekStartDate, weekEndDate);
+  const rateWinners = getWeeklyWinners(summary, "completeRate");
+  const doneWinners = getWeeklyWinners(summary, "done");
+
+  for (const winner of rateWinners) {
+    await giveWeeklyBonusOnce(winner.userId, weekEndDate, WEEKLY_RATE_WINNER_REASON);
+  }
+
+  for (const winner of doneWinners) {
+    await giveWeeklyBonusOnce(winner.userId, weekEndDate, WEEKLY_DONE_WINNER_REASON);
   }
 }
 
@@ -1300,8 +1398,6 @@ async function login() {
     app.selectedDate = app.today;
     resetDataCacheKeys();
 
-    localStorage.setItem("homeStudyUser", JSON.stringify(app.user));
-
     setText("helloTitle", `${app.user.name}의 공부방`);
 
     loadInitialData();
@@ -1318,10 +1414,7 @@ async function login() {
 
 async function loginAdmin() {
   const quotePromise = typeLoginQuote();
-  const saved = localStorage.getItem("homeStudyUser");
-  const savedUser = saved ? JSON.parse(saved) : null;
-
-  app.user = savedUser && savedUser.userId ? savedUser : { userId: "admin", name: "관리자" };
+  app.user = { userId: "admin", name: "관리자" };
   app.adminMode = true;
   resetDataCacheKeys();
 
@@ -1333,30 +1426,6 @@ async function loginAdmin() {
   showScreen("main");
   showTab("family");
   showToast("🔐 관리자 모드로 들어왔어요.");
-}
-
-async function tryAutoLogin() {
-  const saved = localStorage.getItem("homeStudyUser");
-  if (!saved) return;
-
-  try {
-    app.user = JSON.parse(saved);
-
-    if (!app.user || !app.user.userId) return;
-
-    app.adminMode = false;
-    app.today = getTodayText();
-    app.selectedDate = app.today;
-    resetDataCacheKeys();
-
-    setText("helloTitle", `${app.user.name}의 공부방`);
-
-    showScreen("main");
-    showHomeTab();
-    await loadInitialData();
-  } catch (err) {
-    localStorage.removeItem("homeStudyUser");
-  }
 }
 
 function logout() {
@@ -1391,6 +1460,7 @@ async function loadInitialData() {
     app.studyItems = app.adminMode ? [] : await fetchStudyItems(app.user.userId);
     app.plans = app.adminMode ? [] : await fetchPlansForDate(app.user.userId, app.selectedDate);
     await settleDueDailyScores(app.today);
+    await settleCompletedWeeklyBonuses(app.today);
     await syncFamilyMonthlyScores(app.today);
     app.familySummary = await fetchFamilySummary(app.today);
     app.personalMonthlyScores = app.adminMode
@@ -2661,16 +2731,24 @@ function renderFamilySummary() {
   const topCompleteRate = Math.max(
     ...app.familySummary.map((member) => getFamilyWeekSummary(member).completeRate || 0)
   );
+  const topDoneCount = Math.max(
+    ...app.familySummary.map((member) => getFamilyWeekSummary(member).done || 0)
+  );
 
   graph.innerHTML = app.familySummary
     .map((member) => {
       const week = getFamilyWeekSummary(member);
       const isTop = topCompleteRate > 0 && week.completeRate === topCompleteRate;
+      const hasMostDone = topDoneCount > 0 && week.done === topDoneCount;
+      const weeklyMarks = [
+        isTop ? `<span class="crown-mark">&#128081;</span>` : "",
+        hasMostDone ? `<span class="medal-mark">&#127941;</span>` : "",
+      ].join("");
 
       return `
       <div class="graph-item">
         <div class="graph-title-row">
-          <span>${isTop ? `<span class="crown-mark">&#128081;</span>` : ""}${escapeHtml(member.name)}</span>
+          <span>${weeklyMarks}${escapeHtml(member.name)}</span>
           <span>${week.done}/${week.total}개 · ${week.completeRate}%</span>
         </div>
         <div class="progress-track">
@@ -2785,7 +2863,6 @@ async function saveFamilyMemberName(targetUserId) {
 
     if (app.user?.userId === targetUserId) {
       app.user.name = name;
-      localStorage.setItem("homeStudyUser", JSON.stringify(app.user));
       setText("helloTitle", `${app.user.name}의 공부방`);
     }
 
@@ -2809,21 +2886,16 @@ async function saveFamilyMemberScore(targetUserId) {
   }
 
   try {
-    const { error } = await supabaseClient
-      .from("users")
-      .update({
-        score: Math.floor(nextScore),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("user_id", targetUserId);
-
-    if (error) throw error;
+    const savedScore = await setUserMonthlyScore(
+      targetUserId,
+      app.today || getTodayText(),
+      nextScore
+    );
 
     app.familySummary = await fetchFamilySummary(app.today || getTodayText());
 
     if (app.user?.userId === targetUserId) {
-      app.user.score = Math.floor(nextScore);
-      localStorage.setItem("homeStudyUser", JSON.stringify(app.user));
+      app.user.score = savedScore;
     }
 
     renderFamilySummary();
@@ -2866,6 +2938,8 @@ function addEnterHandler(id, callback) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  localStorage.removeItem("homeStudyUser");
+
   setDailyLoginPhoto();
   hideLoginQuote();
 
@@ -2874,5 +2948,5 @@ document.addEventListener("DOMContentLoaded", () => {
   addEnterHandler("quickPlanInput", addQuickPlan);
 
   startDateRolloverWatcher();
-  tryAutoLogin();
+  showScreen("login");
 });
